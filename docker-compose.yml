@@ -1,0 +1,22 @@
+version: "3.7"
+services:
+    app:
+        build: ./app
+        container_name: python-app
+        command: sh -c "uvicorn app.src.main:app --host 0.0.0.0 --port 9999 --reload"
+        ports:
+            - 9999:9999
+        volumes:
+            - .:/code 
+            - ./sqlite.db:/code/sqlite.db
+        depends_on:
+            - rabbitmq
+
+    rabbitmq:
+        image: rabbitmq:3-management 
+        ports:
+            - "5672:5672"      # Standard RabbitMQ port
+            - "15672:15672"
+        environment:
+            RABBITMQ_DEFAULT_USER: guest
+            RABBITMQ_DEFAULT_PASS: guest
