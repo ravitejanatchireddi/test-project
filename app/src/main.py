@@ -1,4 +1,4 @@
-import asyncio, requests, os
+import asyncio, requests, os, docker
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ from fastapi.encoders import jsonable_encoder
 # credentials = pika.PlainCredentials("guest", "guest")  # Replace with actual credentials
 # parameters = pika.ConnectionParameters("rabbitmq", 5672, "/", credentials)
 
-
+client = docker.from_env()
 models.Base.metadata.create_all(bind=engine)
 
 
@@ -26,7 +26,7 @@ def consume():
     # )
     connection = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
     channel = connection.channel()
-    channel.queue_declare(queue="hello")  # Declare the queue
+    channel.queue_declare(queue="task_queue", durable=True)  # Declare the queue
 
     def callback(ch, method, properties, body):
         # data = json.loads(body)
@@ -38,8 +38,10 @@ def consume():
             print("Error processing message:", response.text)
         print("Received message:", data)
         # Do something with the message data
+        ch.basic_ack(delivery_tag=method.delivery_tag)
 
-    channel.basic_consume(queue="hello", on_message_callback=callback, auto_ack=True)
+    channel.basic_qos(prefetch_count=1)
+    channel.basic_consume(queue="task_queue", on_message_callback=callback)
     channel.start_consuming()
 
 
@@ -82,6 +84,17 @@ async def db_session_middleware(request: Request, call_next):
 # Dependency
 def get_db(request: Request):
     return request.state.db
+
+
+def trigger_container_with_env(container_name, env_vars):
+    client.containers.run(image=container_name, environment=env_vars)
+
+
+@app.post("/trigger")
+async def trigger_action(action: str, container_name: str, custom_input: str):
+    env_vars = {"CUSTOM_INPUT": custom_input}
+    trigger_container_with_env(container_name, env_vars)
+    return {"message": "Container triggered with input"}
 
 
 @app.post("/process_data")
